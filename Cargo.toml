@@ -37,6 +37,7 @@ features = [
     "p40",
     "can0",
     "can1",
+    "asclin0",
 ]
 
 [dependencies.critical-section]

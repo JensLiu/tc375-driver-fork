@@ -68,6 +68,7 @@ pub mod log;
 pub mod scu;
 pub mod ssw;
 pub mod util;
+pub mod uart;
 
 pub use embedded_can;
 pub use embedded_hal;
