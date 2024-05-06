@@ -2,13 +2,12 @@
 
 use core::mem::transmute;
 
-use tc375_pac::{asclin0, RegisterValue};
-use tc375_pac::{asclin0::Asclin0, src::Asclin};
+use tc375_pac::asclin0::Asclin0;
+use tc375_pac::RegisterValue;
 
-use crate::gpio::PushPull;
 use crate::scu::wdt_call;
 
-use super::uart_node::{NodeConfig, OutputIdx, Pins};
+use super::uart_node::{OutputIdx, PinsConfig};
 
 #[derive(Clone, Copy)]
 pub enum PadDriver {
@@ -47,6 +46,7 @@ pub enum PortNumber {
     _40,
 }
 
+#[allow(unused)]
 #[derive(Debug, PartialEq)]
 enum State {
     NotChanged = 0,
@@ -59,6 +59,7 @@ struct Port {
     inner: crate::pac::p14::P14,
 }
 
+#[allow(unused)]
 impl Port {
     fn new(port: PortNumber) -> Self {
         use crate::pac::p14::P14;
@@ -196,6 +197,7 @@ impl Port {
 }
 
 struct Mode(u32);
+#[allow(unused)]
 impl Mode {
     const INPUT_NO_PULL_DEVICE: Mode = Self(0);
     const INPUT_PULL_DOWN: Mode = Self(8);
@@ -247,21 +249,24 @@ impl OutputMode {
 }
 
 // port configuration for uart node
-pub fn port_mapping(asclin0: &Asclin0, pins: &Pins) {
+pub fn port_mapping(asclin0: &Asclin0, pins: &PinsConfig) {
     // rx
-    let rx = &pins.rx;
-    let rx_port = Port::new(rx.port);
-    rx_port.set_pin_mode_input(rx.pin_index, InputMode::PULL_UP);
-    rx_port.set_pin_pad_driver(rx.pin_index, PadDriver::CmosAutomotiveSpeed1);
-    unsafe {
-        asclin0
-            .iocr()
-            .modify(|val| val.alti().set(rx.select.into()));
+    if let Some(rx) = &pins.rx {
+        let rx_port = Port::new(rx.port);
+        rx_port.set_pin_mode_input(rx.pin_index, rx.input_mode);
+        rx_port.set_pin_pad_driver(rx.pin_index, pins.pad_driver);
+        // set rx input
+        unsafe {
+            asclin0
+                .iocr()
+                .modify(|val| val.alti().set(rx.select.into()));
+        }
     }
 
     // tx
-    let tx = &pins.tx;
-    let tx_port = Port::new(tx.port);
-    tx_port.set_pin_mode_output(tx.pin_index, OutputMode::PUSH_PULL, tx.select);
-    tx_port.set_pin_pad_driver(tx.pin_index, PadDriver::CmosAutomotiveSpeed1);
+    if let Some(tx) = &pins.tx {
+        let tx_port = Port::new(tx.port);
+        tx_port.set_pin_mode_output(tx.pin_index, tx.output_mode, tx.select);
+        tx_port.set_pin_pad_driver(tx.pin_index, pins.pad_driver);
+    }
 }

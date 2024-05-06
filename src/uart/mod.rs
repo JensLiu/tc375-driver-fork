@@ -1,34 +1,29 @@
-use tc375_pac::{
-    asclin0::{self, Asclin0},
-    cpu0::tr,
-    src::{asclin, Asclin},
-    RegisterValue, SRC,
-};
+use core::cmp::max;
 
-use crate::{gpio::PushPull, uart::uart_node::Tos};
+use tc375_pac::{asclin0::Asclin0, RegisterValue, SRC};
 
-use crate::{
-    gpio::{self, gpio01, gpio20},
-    scu,
-    uart::uart_node::ClockSource,
-};
+use crate::{scu, uart::uart_node::{ClockSource, FrameMode, Tos}};
 
-use self::{
-    port::PortNumber,
-    uart_node::{NodeConfig, OutputIdx, Pins, Rx, RxSel, Tx},
-};
+use self::uart_node::NodeConfig;
 
-pub mod port;
+pub mod ports;
 pub mod uart_node; // TODO: move?
 
 // dirty code to get things started
-pub fn print(buf: &[u8]) {
+pub fn print(s: &str) {
     let asclin0 = tc375_pac::ASCLIN0;
-    for byte in buf {
+    for ch in s.chars() {
+        // wait for the TFL flag
+        while unsafe { !asclin0.flags().read().tfl().get() } {}
         unsafe {
-            asclin0.txdata().modify_atomic(|val| {
-                val.set_raw(*byte as u32)
-            });
+            // clear the TFL flag
+            asclin0
+                .flagsclear()
+                .modify_atomic(|val| val.tflc().set(true));
+            // write one byte to the TXDATA register
+            asclin0
+                .txdata()
+                .modify_atomic(|val| val.set_raw(ch as u32));
         }
     }
 }
@@ -36,9 +31,24 @@ pub fn print(buf: &[u8]) {
 // only supports P14 and ASCLIN0
 pub fn init_uart(config: NodeConfig) {
     let asclin0 = tc375_pac::ASCLIN0;
-    let p14 = tc375_pac::P14;
 
     enable_uart_module(&asclin0);
+
+    // disable clock source
+    set_clock_source(&asclin0, ClockSource::NoClock);
+    // set the module in initialise mode
+    unsafe {
+        asclin0
+            .framecon()
+            .modify(|val| val.mode().set(FrameMode::Initialise.into()));
+    }
+
+    // set prescaler
+    unsafe {
+        asclin0
+            .bitcon()
+            .modify(|val| val.prescaler().set(config.baud_rate.prescaler - 1));
+    }
 
     // bit timing config (enable clock source for baud rate configuration)
     set_clock_source(&asclin0, config.clock_source);
@@ -54,57 +64,45 @@ pub fn init_uart(config: NodeConfig) {
     unsafe {
         asclin0.framecon().modify(|val| {
             val.pen()
-                .set(config.frame.parity_bit)
+                .set(config.frame.parity_bit) // parity enable
                 .odd()
-                .set(config.frame.parity_type)
+                .set(config.frame.parity_type) //parity type (odd / even)
                 .stop()
-                .set(config.frame.stop_bit)
+                .set(config.frame.stop_bit) // stop bit
                 .msb()
-                .set(config.frame.shift_dir)
-                .idle()
-                .set(config.frame.idle_delay) // out of order config (compared to iLLD)
-                .mode()
-                .set(config.frame.frame_mode.into()) // out of order config
+                .set(config.frame.shift_dir) // shift direction
+                .idle() // idle delay
+                .set(config.frame.idle_delay)
+                .mode() // frame mode
+                .set(config.frame.frame_mode.into())
         });
         asclin0
-            .datcon()
+            .datcon() // data length
             .modify(|val| val.datlen().set(config.frame.data_length))
     }
 
     // set fifo
     unsafe {
         asclin0.txfifocon().modify(|val| {
-            val.inw()
+            val.inw() // tx fifo inlet width
                 .set(config.fifo.in_width)
-                .intlevel()
+                .intlevel() // tx fifo interrupt level
                 .set(config.fifo.tx_fifo_interrupt_level)
-                .fm()
+                .fm() // tx fifo interrupt mode
                 .set(config.fifo.tx_fifo_interrupt_mode)
         });
         asclin0.rxfifocon().modify(|val| {
             val.outw()
-                .set(config.fifo.out_width)
+                .set(config.fifo.out_width) // rx fifo outlet width
                 .intlevel()
-                .set(config.fifo.rx_fifo_interrupt_level)
-                .fm()
+                .set(config.fifo.rx_fifo_interrupt_level) // rx fifo interrupt level
+                .fm() // rx fifo interrupt mode
                 .set(config.fifo.rx_fifo_interrupt_mode)
         });
     }
 
     // pin mapping
-    let pins = Pins {
-        rx: Rx {
-            port: PortNumber::_14,
-            pin_index: 1,
-            select: RxSel::_A,
-        },
-        tx: Tx {
-            port: PortNumber::_14,
-            pin_index: 0,
-            select: OutputIdx::ALT2,
-        },
-    };
-    port::port_mapping(&asclin0, &pins);
+    ports::port_mapping(&asclin0, &config.pins);
 
     // select the clock source
     set_clock_source(&asclin0, config.clock_source);
@@ -112,13 +110,27 @@ pub fn init_uart(config: NodeConfig) {
     unsafe {
         // disable all flags
         asclin0.flagsenable().modify(|val| val.set_raw(0x00000000));
-        // set all flags
+        // clear all flags
         asclin0
             .flagsclear()
             .modify_atomic(|val| val.set_raw(0xFFFFFFFF));
     }
 
-    // skipping error flag setting
+    // error flag setting
+    unsafe {
+        asclin0.flagsenable().modify(|val| {
+            val.pee() // parity error flag enable
+                .set(true)
+                .fee() // frame error flag enable
+                .set(true)
+                .rfoe() // rx fifo overflow flag enable
+                .set(true)
+                .rfue() // rx fifo underflow enable
+                .set(true)
+                .tfoe() // tx fifo overflow flag enable
+                .set(true)
+        });
+    }
     // skipping software fifos
 
     // initialise interrupts
@@ -175,24 +187,24 @@ pub fn init_uart(config: NodeConfig) {
 
     // enable transfers
     unsafe {
-        // enable fifo inlet
         asclin0.rxfifocon().modify(|val| {
-            val.eni().set(true)
+            val.eni()
+                .set(true) // enable fifo inlet
+                .flush()
+                .set(true) // flush rx fifo
         });
         // enable fifo outlet
         asclin0.txfifocon().modify(|val| {
-            val.eno().set(true)
+            val.eno() // enable fifo inlet
+                .set(true)
+                .flush() // flush tx fifo
+                .set(true)
         });
-        
-        // flush rx fifo
-        asclin0.rxfifocon().modify(|val| {
-            val.flush().set(true)
-        });
+    }
 
-        // flush tx fifo
-        asclin0.txfifocon().modify(|val| {
-            val.flush().set(true)
-        });
+    // start transmission flag
+    unsafe {
+        asclin0.flagsset().modify_atomic(|val| val.tfls().set(true));
     }
 }
 
@@ -205,7 +217,7 @@ pub fn enable_uart_module(asclin0: &Asclin0) {
     }
 
     // wait until it is enabled
-    // while unsafe { asclin0.clc().read().disr().get() } {} // comment out if it blocks?
+    while unsafe { asclin0.clc().read().disr().get() } {}
 
     scu::wdt::set_cpu_endinit_inline();
 }
@@ -223,11 +235,25 @@ pub fn set_clock_source(asclin0: &Asclin0, source: ClockSource) {
 }
 
 pub fn set_bit_timing(asclin0: &Asclin0, config: &NodeConfig) {
-    let (d, n) = find_best_fraction(0 as f32, 0 as f32, 0 as u32); // hacked for now
+    // let (d, n) = find_best_fraction(0 as f32, 0 as f32, 0 as u32); // hacked for now
+    let over_sampling_factor = max(config.baud_rate.over_sampling_factor + 1, 4);
+    let sample_point_position = max(config.bit_timing.sample_point_position, 1);
+    // calculation.... hacked
+    let d_best = 434;
+    let n_best = 1;
+    // disable clock source
+    let original_clock_source: ClockSource = unsafe { asclin0.csr().read().clksel().get() }
+        .try_into()
+        .unwrap();
+    set_clock_source(asclin0, ClockSource::NoClock.into());
+
     unsafe {
-        asclin0
-            .brg()
-            .modify(|val| val.denominator().set(d as u16).numerator().set(n as u16));
+        asclin0.brg().modify(|val| {
+            val.denominator()
+                .set(d_best as u16)
+                .numerator()
+                .set(n_best as u16)
+        });
     }
 
     unsafe {
@@ -235,36 +261,30 @@ pub fn set_bit_timing(asclin0: &Asclin0, config: &NodeConfig) {
             val
                 // set shift frequency
                 .oversampling()
-                .set(config.baud_rate.over_sampling_factor)
+                .set(over_sampling_factor - 1)
                 // set sampling point
                 .samplepoint()
-                .set(config.bit_timing.sample_point_position)
+                .set(sample_point_position)
                 // set median filter
                 .sm()
                 .set(config.bit_timing.median_filter)
         });
     }
+
+    // restore clock source
+    set_clock_source(asclin0, original_clock_source);
 }
 
-// pub fn get_fa_fraquency(asclin0: &Asclin0) -> f32 {
-//     let clock_source = unsafe {
-//         asclin0.csr().read().clksel().get()
-//     };
-//     match clock_source {
-//         ClockSource::NoClock => 0.0,
-//         ClockSource::FastClock =>
-//         _ => panic!("Invalid clock source")
-//     }
-// }
-
 // what does this algorithm do???
+#[allow(unused)]
 pub fn find_best_fraction(fpd: f32, baudrate: f32, oversampling: u32) -> (u32, u32) {
-    let fOvs: f32 = baudrate * oversampling as f32;
-    let limit: f32 = 0.001 * fOvs;
+    let fovs: f32 = baudrate * oversampling as f32;
+    let limit: f32 = 0.001 * fovs;
     // numerator, denominator
-    let d: u32 = (fpd / fOvs) as u32;
+    let d: u32 = (fpd / fovs) as u32;
     let n: u32 = 1;
 
+    // algorithm...
     let d_best: u32 = d;
     let d_best: u32 = n;
 
