@@ -1,4 +1,5 @@
 // borrowed from Port: can/can_node/mod.rs
+// For GPUI Port configuration. Should be extracted into a common crate 
 
 use core::mem::transmute;
 
@@ -7,7 +8,7 @@ use tc375_pac::RegisterValue;
 
 use crate::scu::wdt_call;
 
-use super::uart_node::{OutputIdx, PinsConfig};
+use super::configs::{OutputIdx, PinsConfig};
 
 #[derive(Clone, Copy)]
 pub enum PadDriver {
@@ -55,7 +56,7 @@ enum State {
     Toggled = (1 << 16) | 1,
 }
 
-struct Port {
+pub struct Port {
     inner: crate::pac::p14::P14,
 }
 

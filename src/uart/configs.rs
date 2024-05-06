@@ -10,8 +10,8 @@ pub struct NodeConfig {
     pub fifo: FifoConfig,
     pub interrupt: InterruptConfig,
     pub error_flags: u8, // hacked for now
-    pub look_back: bool,
-    pub pins: PinsConfig,
+    pub loop_back: bool,
+    // pub pins: PinsConfig,
 }
 
 // baud rate --------------------------------------------------------------
@@ -82,7 +82,7 @@ pub enum FrameMode {
     #[default]
     Asc,
     Spi,
-    Lin,
+    Lin, // not supported so far
 }
 
 impl From<FrameMode> for u8 {
@@ -129,13 +129,13 @@ impl TryInto<ClockSource> for u8 {
 
 // FIFO Control --------------------------------------------------------------
 pub struct FifoConfig {
-    pub in_width: u8,                // TXFIFOCON.INW, transmit FIFO inlet width */
-    pub out_width: u8,               // RXFIFOCON.OTW, receive FIFO oulet width */
-    pub tx_fifo_interrupt_level: u8, // TXFIFOCON.INTLEVEL, Tx FIFO interrupt level */
-    pub rx_fifo_interrupt_level: u8, // RXFIFOCON.INTLEVEL, Rx FIFO interrupt level */
-    pub buff_mode: u32, // RXFIFOCON.BUFF, receive buffer mode (Rx FIFO or Rx buffer) */
-    pub tx_fifo_interrupt_mode: u8, // TXFIFOCON.FM, Tx FIFO interrupt generation mode */
-    pub rx_fifo_interrupt_mode: u8, // RXFIFOCON.FM, Rx FIFO interrupt generation mode */
+    pub in_width: u8,                // TXFIFOCON.INW, transmit FIFO inlet width
+    pub out_width: u8,               // RXFIFOCON.OTW, receive FIFO oulet width
+    pub tx_fifo_interrupt_level: u8, // TXFIFOCON.INTLEVEL, Tx FIFO interrupt level
+    pub rx_fifo_interrupt_level: u8, // RXFIFOCON.INTLEVEL, Rx FIFO interrupt level
+    pub buff_mode: u32,              // RXFIFOCON.BUFF, receive buffer mode (Rx FIFO or Rx buffer)
+    pub tx_fifo_interrupt_mode: u8,  // TXFIFOCON.FM, Tx FIFO interrupt generation mode
+    pub rx_fifo_interrupt_mode: u8,  // RXFIFOCON.FM, Rx FIFO interrupt generation mode
 }
 
 impl Default for FifoConfig {
@@ -154,10 +154,10 @@ impl Default for FifoConfig {
 
 // Interrupt Control -----------------------------------------------------------
 pub struct InterruptConfig {
-    pub tx_priority: u8,      // brief transmit interrupt priority */
-    pub rx_priority: u8,      // brief receive interrupt priority */
-    pub er_priority: u8,      // brief error interrupt priority */
-    pub type_of_service: Tos, // brief type of interrupt service */
+    pub tx_priority: u8,      // brief transmit interrupt priority
+    pub rx_priority: u8,      // brief receive interrupt priority
+    pub er_priority: u8,      // brief error interrupt priority
+    pub type_of_service: Tos, // brief type of interrupt service
 }
 
 impl Default for InterruptConfig {
