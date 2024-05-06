@@ -1,5 +1,5 @@
 // borrowed from Port: can/can_node/mod.rs
-// For GPUI Port configuration. Should be extracted into a common crate 
+// For GPIO Port configuration. Should be extracted into a common crate 
 
 use core::mem::transmute;
 
