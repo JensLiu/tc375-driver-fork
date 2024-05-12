@@ -69,6 +69,7 @@ pub mod scu;
 pub mod ssw;
 pub mod util;
 pub mod uart;
+pub mod timer;
 
 pub use embedded_can;
 pub use embedded_hal;

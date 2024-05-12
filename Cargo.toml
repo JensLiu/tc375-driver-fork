@@ -38,6 +38,7 @@ features = [
     "can0",
     "can1",
     "asclin0",
+    "gpt120",
 ]
 
 [dependencies.critical-section]
