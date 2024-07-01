@@ -105,7 +105,6 @@ impl Port {
     }
 
     fn set_pin_state(&self, index: u8, action: State) {
-        // SAFETY: Each bit of OMR is W0, TODO: index should be in range [0, 32)?
         unsafe {
             self.inner.omr().init(|r| {
                 let v = (action as u32) << index;
@@ -131,13 +130,10 @@ impl Port {
     }
 
     fn set_pin_mode(&self, index: u8, mode: Mode) {
-        // TODO: index should be in range [0, 16)
         let ioc_index = index / 4;
         let shift = (index & 0x3) * 8;
 
-        // TODO This unsafe code could be made safe by comparing the address (usize) of the port if only self.inner.0 was public
         let is_supervisor =
-            // SAFETY: The following transmute is safe because the underlying registers have the same layout
             unsafe { transmute::<_, usize>(self.inner) } == unsafe { transmute(crate::pac::P40) };
 
         if is_supervisor {
@@ -151,15 +147,10 @@ impl Port {
             });
         }
 
-        // TODO Can we do this without transmute?
-        // TODO Use change_pin_mode_port_pin from gpio module instead?
         let iocr: crate::pac::Reg<crate::pac::p00::Iocr0_SPEC, crate::pac::RW> = {
             let iocr0 = self.inner.iocr0();
-            // SAFETY: The following transmute is safe, IOCR0 is a 32 bit register
             let addr: *mut u32 = unsafe { transmute(iocr0) };
-            // SAFETY: The following operation is safe since ioc_index is in range [0, 4) TODO: see line 918
             let addr = unsafe { addr.add(ioc_index as usize) };
-            // SAFETY: The following transmute is safe because IOCR0, IOCR4, IOCR8 and IOCR12 have the same layout
             unsafe { transmute(addr) }
         };
 

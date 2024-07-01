@@ -2,13 +2,18 @@ use tc375_pac::gpt120::Gpt120;
 
 use crate::scu;
 
-pub fn init_gpt12_timer() {
+const TIMER_VALUE: u16 = 48828 / 500; // hack: 48828->500ms => 1ms->(48828/500)
+
+// const TIMER_VALUE: u16 = 48828 / 1000; // hack: 48828->500ms => 500us->(48828/1000)
+
+
+pub fn init_gpt12_timer(prio: u8) {
     let gpt120 = tc375_pac::GPT120;
     gpt12_init(&gpt120);
     timer_t3_init(&gpt120);
     timer_t2_init(&gpt120);
     timer_start(&gpt120);
-    interrupt_init();
+    interrupt_init(prio);
 }
 
 fn timer_start(gpt120: &Gpt120) {
@@ -17,19 +22,19 @@ fn timer_start(gpt120: &Gpt120) {
     }
 }
 
-fn interrupt_init() {
+fn interrupt_init(prio: u8) {
     let src = tc375_pac::SRC;
     let srcr = src.gpt12().gpt12().gpt120t3();
     unsafe {
         // initialise service request
         srcr.modify(|r| {
             r.srpn() // set priority
-                .set(6)
+                .set(prio)
                 .tos() // type of service
                 .set(0) // CPU 0
                 .clrr() // clear request
                 .set(true)
-                .sre()  // enable interrupt
+                .sre() // enable interrupt
                 .set(true)
         })
     }
@@ -43,7 +48,7 @@ fn timer_t2_init(gpt120: &Gpt120) {
                 .t2i() // reload input mode
                 .set(7) // both edges TxOTL
         });
-        gpt120.t2().modify(|r| r.t2().set(48828)); // timer value
+        gpt120.t2().modify(|r| r.t2().set(TIMER_VALUE)); // timer value
     }
 }
 
@@ -58,7 +63,7 @@ fn timer_t3_init(gpt120: &Gpt120) {
                 .t3i() // timer prescalar
                 .set(6) // 64 = 2^6
         });
-        gpt120.t3().modify(|r| r.t3().set(48828)) // set T3 timer value
+        gpt120.t3().modify(|r| r.t3().set(TIMER_VALUE)) // set T3 timer value
     }
 }
 

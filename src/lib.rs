@@ -70,6 +70,7 @@ pub mod ssw;
 pub mod util;
 pub mod uart;
 pub mod timer;
+pub mod interrupt;
 
 pub use embedded_can;
 pub use embedded_hal;
